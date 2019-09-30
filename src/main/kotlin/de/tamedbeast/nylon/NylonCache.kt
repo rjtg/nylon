@@ -25,12 +25,12 @@ private val logger = KotlinLogging.logger {}
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Nylon(val key: String, val softTtlMillis: Long, val hardTtlMillis: Long, val timeoutMillis: Long, val cacheName: String)
 
-enum class NylonState {
+private enum class NylonState {
     GOOD, SOFT, HARD
 }
 
 @Component
-class NylonAspect(@Autowired private val cacheManager: RedisCacheManager) {
+class NylonAspectRedis(@Autowired private val cacheManager: RedisCacheManager) {
 
 
     private val expressionParser = SpelExpressionParser();
@@ -40,7 +40,7 @@ class NylonAspect(@Autowired private val cacheManager: RedisCacheManager) {
        if (!cacheManager.canCreateNewCaches()) logger.warn { "Redis CacheManager must be configured to allow creation of caches on the fly" }
     }
 
-    @Pointcut("@annotation(ResilenceCachable)")
+    @Pointcut("@annotation(Nylon)")
     fun nylonPointcut(nylon: Nylon) {};
 
     private fun getContextContainingArguments(joinPoint: ProceedingJoinPoint): StandardEvaluationContext {
@@ -63,7 +63,7 @@ class NylonAspect(@Autowired private val cacheManager: RedisCacheManager) {
 
 
     @ExperimentalTime
-    @Around("TwoLayerRedisCacheablePointcut(twoLayerRedisCacheable)")
+    @Around("nylonPointcut(nylon)")
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint, nylon: Nylon): Any? {
         val context = getContextContainingArguments(joinPoint)
@@ -75,7 +75,7 @@ class NylonAspect(@Autowired private val cacheManager: RedisCacheManager) {
         return cache?.let { valueCache ->
             if (valueCache is RedisCache) {
                 val cacheValue = valueCache[cacheKey]?.get()?.let {c ->
-                    val inserTionTime = getInsertionTimeCache(nylon)?.let {
+                    val insertionTime = getInsertionTimeCache(nylon)?.let {
                         tCache ->
                         tCache[cacheKey]?.get()?.let { time ->
                             if (time is Long) {
@@ -88,11 +88,11 @@ class NylonAspect(@Autowired private val cacheManager: RedisCacheManager) {
                         }
                     } ?: start
                     val state = when {
-                        (start - inserTionTime > nylon.hardTtlMillis) -> {
+                        (start - insertionTime > nylon.hardTtlMillis) -> {
                             //value is old and should only be used if refresh takes to long
                             NylonState.HARD
                         }
-                        (start - inserTionTime > nylon.softTtlMillis) -> {
+                        (start - insertionTime > nylon.softTtlMillis) -> {
                             //value is good but needs background refresh
                             NylonState.SOFT
                         }
