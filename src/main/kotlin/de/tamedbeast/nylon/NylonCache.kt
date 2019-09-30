@@ -81,9 +81,10 @@ class NylonAspectRedis(@Autowired private val cacheManager: RedisCacheManager) {
                             if (time is Long) {
                                 time
                             } else {
-                                //insertion time unknown - set now
-                                tCache.putIfAbsent(cacheKey, start)
-                                start
+                                //insertion time unknown - set soft
+                                val soft = start - (nylon.softTtlMillis +1)
+                                tCache.put(cacheKey, soft)
+                                soft
                             }
                         }
                     } ?: start
