@@ -9,39 +9,34 @@ import org.aspectj.lang.annotation.Around
 import org.aspectj.lang.annotation.Pointcut
 import org.aspectj.lang.reflect.CodeSignature
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.redis.cache.RedisCache
-import org.springframework.data.redis.cache.RedisCacheManager
+import org.springframework.cache.CacheManager
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.expression.spel.support.StandardEvaluationContext
 import org.springframework.stereotype.Component
-import javax.annotation.PostConstruct
-import kotlin.time.ExperimentalTime
-import kotlin.time.milliseconds
-import kotlin.time.toJavaDuration
+import java.time.Duration
+import kotlin.random.Random
 
 private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Nylon(val key: String, val softTtlMillis: Long, val hardTtlMillis: Long, val timeoutMillis: Long, val cacheName: String)
+annotation class Nylon(val key: String, val softTtlMillis: Long, val timeoutMillis: Long, val cacheName: String, val jitter: Long = 0)
 
 private enum class NylonState {
-    GOOD, SOFT, HARD
+    GOOD, BACKGROUND_REFRESH, FETCH
 }
 
 @Component
-class NylonAspectRedis(@Autowired private val cacheManager: RedisCacheManager) {
+class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
 
 
-    private val expressionParser = SpelExpressionParser();
+    private val expressionParser = SpelExpressionParser()
 
-    @PostConstruct
-    fun postConstruct() {
-       if (!cacheManager.canCreateNewCaches()) logger.warn { "Redis CacheManager must be configured to allow creation of caches on the fly" }
-    }
 
     @Pointcut("@annotation(Nylon)")
-    fun nylonPointcut(nylon: Nylon) {};
+    fun nylonPointcut(nylon: Nylon) {
+        //just a pointcut
+    }
 
     private fun getContextContainingArguments(joinPoint: ProceedingJoinPoint): StandardEvaluationContext {
         val context = StandardEvaluationContext()
@@ -62,7 +57,6 @@ class NylonAspectRedis(@Autowired private val cacheManager: RedisCacheManager) {
     }
 
 
-    @ExperimentalTime
     @Around("nylonPointcut(nylon)")
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint, nylon: Nylon): Any? {
@@ -71,85 +65,70 @@ class NylonAspectRedis(@Autowired private val cacheManager: RedisCacheManager) {
 
         val start = System.currentTimeMillis()
 
-        val cache = cacheManager.getCache(nylon.cacheName)
-        return cache?.let { valueCache ->
-            if (valueCache is RedisCache) {
-                val cacheValue = valueCache[cacheKey]?.get()?.let {c ->
-                    val insertionTime = getInsertionTimeCache(nylon)?.let {
-                        tCache ->
-                        tCache[cacheKey]?.get()?.let { time ->
-                            if (time is Long) {
-                                time
-                            } else {
-                                //insertion time unknown - set soft
-                                val soft = start - (nylon.softTtlMillis +1)
-                                tCache.put(cacheKey, soft)
-                                soft
-                            }
-                        }
-                    } ?: start
-                    val state = when {
-                        (start - insertionTime > nylon.hardTtlMillis) -> {
-                            //value is old and should only be used if refresh takes to long
-                            NylonState.HARD
-                        }
-                        (start - insertionTime > nylon.softTtlMillis) -> {
-                            //value is good but needs background refresh
-                            NylonState.SOFT
-                        }
-                        else -> {
-                            //value is good and will not be refreshed
-                            NylonState.GOOD
-                        }
-
-                    }
-                    Pair(c, state)
+        val cacheValue = getCacheValue(nylon.cacheName, cacheKey)?.let {
+            val time = getInsertionTimeForCacheValue(nylon.cacheName, cacheKey)
+            val state = time?.let {t ->
+                if (start - t <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
+                    NylonState.GOOD
+                } else {
+                    NylonState.BACKGROUND_REFRESH
                 }
-                cacheValue?.let {
-                    when(it.second) {
-                        NylonState.HARD -> {
-                            val timeout: Timeout<Any?> = Timeout.of(nylon.timeoutMillis.milliseconds.toJavaDuration())
-                            val fallback: Fallback<Any?> = Fallback.of(it.first)
-                            Failsafe.with(fallback, timeout).get { _ -> insert(joinPoint, nylon)}
-                        }
-                        NylonState.SOFT -> {
-                            val fallback: Fallback<Any?> = Fallback.of(it.first)
-                            Failsafe.with(fallback).getAsync { _ -> insert(joinPoint, nylon)}
-                            it.first
-                        }
-                        NylonState.GOOD -> it.first
-                    }
-
-                } ?: insert(joinPoint, nylon)
+            } ?: NylonState.FETCH
+            Pair(it, state)
+        } ?: Pair(null, NylonState.FETCH)
+        return when(cacheValue.second) {
+            NylonState.FETCH -> {
+                logger.debug { "fetching value downstream. Using Fallback: ${cacheValue.first != null}. Timeout: ${nylon.timeoutMillis} ms." }
+                val timeout: Timeout<Any?> = Timeout.of(Duration.ofMillis(nylon.timeoutMillis))
+                val fallback: Fallback<Any?> = Fallback.of(cacheValue.first)
+                Failsafe.with(fallback, timeout).get { _ -> insert(joinPoint, nylon.cacheName, cacheKey)}
             }
-
+            NylonState.BACKGROUND_REFRESH -> {
+                logger.debug { "Using cached value. refreshing value in background." }
+                val fallback: Fallback<Any?> = Fallback.of(cacheValue.first)
+                Failsafe.with(fallback).getAsync { _ -> insert(joinPoint, nylon.cacheName, cacheKey)}
+                cacheValue.first
+            }
+            NylonState.GOOD -> {
+                logger.debug { "Using cached value." }
+                cacheValue.first
+            }
         }
-
     }
 
-    private fun getInsertionTimeCache(nylon: Nylon) =
-        cacheManager.getCache("${nylon.cacheName}__NYLON_T")
+    private fun getCacheValue(cacheName: String, key: String): Any? {
+        return try {
+            val cache = cacheManager.getCache(cacheName)
+            cache?.let { valueCache ->
+                valueCache[key]?.get()
+            }
+        } catch (e: Exception){
+            null
+        }
+    }
+
+    private fun getInsertionTimeForCacheValue(cacheName: String, key: String) : Long? {
+        return try {
+            getCacheValue(getInsertionTimeCacheName(cacheName), key) as Long?
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getInsertionTimeCacheName(cacheName: String) = "${cacheName}__NYLON_T"
 
 
-    private fun insert(joinPoint: ProceedingJoinPoint, nylon: Nylon): Any? {
+    private fun insert(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String): Any? {
 
         val result = joinPoint.proceed()
+        val time = System.currentTimeMillis()
 
-        val context = getContextContainingArguments(joinPoint)
-        val cacheKey = getCacheKeyFromAnnotationKeyValue(context, nylon.key)
-
-        val cache = cacheManager.getCache(nylon.cacheName)
+        val cache = cacheManager.getCache(cacheName)
+        val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
         cache?.let { realCache ->
             realCache.put(cacheKey, result)
-            getInsertionTimeCache(nylon).put(cacheKey, System.currentTimeMillis())
+            iCache?.put(cacheKey, time)
         }
         return result
-    }
-}
-
-private fun RedisCacheManager.canCreateNewCaches():Boolean {
-    return javaClass.getDeclaredField("allowInFlightCacheCreation").let {
-        it.isAccessible = true
-        return@let it.getBoolean(this);
     }
 }
