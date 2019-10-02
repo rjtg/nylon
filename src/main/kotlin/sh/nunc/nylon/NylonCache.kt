@@ -1,4 +1,4 @@
-package de.tamedbeast.nylon
+package sh.nunc.nylon
 
 import mu.KotlinLogging
 import net.jodah.failsafe.Failsafe
