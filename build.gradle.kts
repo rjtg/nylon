@@ -1,27 +1,104 @@
+import com.jfrog.bintray.gradle.BintrayExtension.PackageConfig
 import com.palantir.gradle.gitversion.VersionDetails
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+val springBootVersion = "2.1.9.RELEASE"
 
 plugins {
     kotlin("jvm") version "1.3.50"
     id("idea")
 //    id("org.springframework.boot") version "2.1.4.RELEASE"
     id("com.palantir.git-version") version "0.11.0" apply true
-//    id("maven-publish") apply true
+    id("maven-publish") apply true
+    id("com.jfrog.bintray") version "1.8.4"
 
 }
 allprojects {
     apply(plugin = "com.palantir.git-version")
-    group = "de.tamedbeast"
+    group = "sh.nunc"
     val gitVersion: groovy.lang.Closure<*> by rootProject.extra
     val versionDetails: groovy.lang.Closure<VersionDetails> by rootProject.extra
     val versionDetailsObj: VersionDetails by rootProject.extra { versionDetails.call() }
-    version = (versionDetailsObj.lastTag
-        ?: "0.0.1") + "-d" + versionDetailsObj.commitDistance + (if (versionDetailsObj.branchName ?: "master" == "master") "" else "-" + versionDetailsObj.branchName!!.substring(
-        0,
-        3
-    )) + "-" + versionDetailsObj.gitHash.substring(0, 4)
+    val distTag = if (versionDetailsObj.commitDistance > 0) "-d" + versionDetailsObj.commitDistance + "-" + versionDetailsObj.gitHash.substring(0, 4) else ""
+    val branchTag = if (versionDetailsObj.branchName ?: "master" == "master") "" + versionDetailsObj.commitDistance else "-" + versionDetailsObj.branchName!!.substring(0, 3)
+    version = (versionDetailsObj.lastTag ?: "0.0.1") + distTag + branchTag
+    apply(plugin = "maven-publish")
+    apply(plugin= "com.jfrog.bintray")
+
+    fun findProperty(s: String) = project.findProperty(s) as String?
+
+    bintray {
+        user = findProperty("bintrayUser")
+        key = findProperty("bintrayApiKey")
+        publish = true
+        setPublications("Maven")
+        pkg(delegateClosureOf<PackageConfig> {
+            repo = "nylon"
+            name = "nylon"
+            userOrg = "sh.nunc"
+            websiteUrl = "https://github.com/rjtg/nylon"
+            githubRepo = "rjtg/nylon"
+            vcsUrl = "https://github.com/rjtg/nylon"
+            setLabels("kotlin", "Spring Boot", "Resilience", "Caching")
+            setLicenses("MIT")
+        })
+
+    }
+
+
+    publishing {
+        publications {
+            create<MavenPublication>("Maven") {
+                groupId = project.group as String
+                artifactId = project.name as String
+                version = project.version as String
+                from(components["java"])
+                pom {
+                    name.set("Nylon")
+                    description.set("Resilience Annotations for Spring Boot")
+                    url.set("https://github.com/rjtg/nylon")
+                    licenses {
+                        license {
+                            name.set("MIT License")
+                            url.set("https://raw.githubusercontent.com/rjtg/nylon/master/LICENSE")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("rjtg")
+                            name.set("Roland Gude")
+                            email.set("rg@nunc.sh")
+                        }
+                    }
+                    scm {
+                        connection.set("scm:git:git://github.com/rjtg/nylon.git")
+                        developerConnection.set("scm:git:ssh://github.com/rjtg/nylon.git")
+                        url.set("https://github.com/rjtg/nylon")
+                    }
+
+                    withXml {
+                        asNode().appendNode("dependencies").let { depNode ->
+                            configurations.compile.get().allDependencies.forEach {
+                                depNode.appendNode("dependency").apply {
+                                    appendNode("groupId", it.group)
+                                    appendNode("artifactId", it.name)
+                                    appendNode("version", it.version)
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+
+
+
 
 }
+
+
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
 }
@@ -33,9 +110,9 @@ repositories {
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
-    implementation("org.springframework.boot:spring-boot-starter-aop:2.1.10.RELEASE")
-    implementation("org.springframework.boot:spring-boot-starter-cache:2.1.10.RELEASE")
-    implementation("org.springframework.data:spring-data-redis:2.1.10.RELEASE")
+    implementation("org.springframework.boot:spring-boot-starter-aop:$springBootVersion")
+    implementation("org.springframework.boot:spring-boot-starter-cache:$springBootVersion")
+    //implementation("org.springframework.data:spring-data-redis:$springBootVersion")
     implementation("io.github.microutils:kotlin-logging:1.6.22")
     implementation("org.aspectj:aspectjweaver:1.9.4")
     implementation("net.jodah:failsafe:2.3.1")
@@ -44,3 +121,4 @@ dependencies {
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
 }
+
