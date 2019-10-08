@@ -35,7 +35,6 @@ allprojects {
         pkg(delegateClosureOf<PackageConfig> {
             repo = "sh.nunc"
             name = "nylon"
-            userOrg = "sh.nunc"
             websiteUrl = "https://github.com/rjtg/nylon"
             githubRepo = "rjtg/nylon"
             vcsUrl = "https://github.com/rjtg/nylon"
