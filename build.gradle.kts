@@ -1,5 +1,7 @@
 import com.jfrog.bintray.gradle.BintrayExtension.PackageConfig
 import com.palantir.gradle.gitversion.VersionDetails
+import groovy.util.Node
+import groovy.util.NodeList
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 val springBootVersion = "2.1.9.RELEASE"
@@ -73,6 +75,20 @@ allprojects {
                         connection.set("scm:git:git://github.com/rjtg/nylon.git")
                         developerConnection.set("scm:git:ssh://github.com/rjtg/nylon.git")
                         url.set("https://github.com/rjtg/nylon")
+                    }
+
+                    withXml {
+                        val deps = asNode()["dependencies"] as NodeList
+                        deps.forEach {asNode().remove(it as Node) }
+                        asNode().appendNode("dependencies").let { depNode ->
+                            configurations.implementation.get().allDependencies.forEach {
+                                depNode.appendNode("dependency").apply {
+                                    appendNode("groupId", it.group)
+                                    appendNode("artifactId", it.name)
+                                    appendNode("version", it.version)
+                                }
+                            }
+                        }
                     }
 
                 }
