@@ -31,7 +31,7 @@ allprojects {
         user = findProperty("bintrayUser")
         key = findProperty("bintrayApiKey")
         publish = true
-        setPublications("Maven")
+        setPublications("nylon")
         pkg(delegateClosureOf<PackageConfig> {
             repo = "sh.nunc"
             name = "nylon"
@@ -48,7 +48,7 @@ allprojects {
 
     publishing {
         publications {
-            create<MavenPublication>("Maven") {
+            create<MavenPublication>("nylon") {
                 groupId = project.group as String
                 artifactId = project.name as String
                 version = project.version as String
