@@ -76,18 +76,6 @@ allprojects {
                         url.set("https://github.com/rjtg/nylon")
                     }
 
-                    withXml {
-                        asNode().appendNode("dependencies").let { depNode ->
-                            configurations.compile.get().allDependencies.forEach {
-                                depNode.appendNode("dependency").apply {
-                                    appendNode("groupId", it.group)
-                                    appendNode("artifactId", it.name)
-                                    appendNode("version", it.version)
-                                }
-                            }
-                        }
-                    }
-
                 }
             }
         }
