@@ -33,7 +33,7 @@ allprojects {
         publish = true
         setPublications("Maven")
         pkg(delegateClosureOf<PackageConfig> {
-            repo = "nylon"
+            repo = "sh.nunc"
             name = "nylon"
             userOrg = "sh.nunc"
             websiteUrl = "https://github.com/rjtg/nylon"
