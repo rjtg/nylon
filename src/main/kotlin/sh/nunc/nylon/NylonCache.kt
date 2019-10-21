@@ -55,7 +55,7 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
 
     private fun getCacheKeyFromAnnotationKeyValue(context: StandardEvaluationContext, key: String): String {
         val expression = expressionParser.parseExpression(key)
-        return expression.getValue(context) as String
+        return (expression.getValue(context) as List<*>).joinToString(",","[", "]")
     }
 
 
