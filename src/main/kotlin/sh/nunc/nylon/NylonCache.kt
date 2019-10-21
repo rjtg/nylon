@@ -6,6 +6,7 @@ import net.jodah.failsafe.Fallback
 import net.jodah.failsafe.Timeout
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
+import org.aspectj.lang.annotation.Aspect
 import org.aspectj.lang.annotation.Pointcut
 import org.aspectj.lang.reflect.CodeSignature
 import org.springframework.beans.factory.annotation.Autowired
@@ -27,6 +28,7 @@ private enum class NylonState {
 }
 
 @Component
+@Aspect
 class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
 
 
