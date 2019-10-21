@@ -33,7 +33,7 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
     private val expressionParser = SpelExpressionParser()
 
 
-    @Pointcut("@annotation(Nylon)")
+    @Pointcut("@within(sh.nunc.nylon.Nylon) || @annotation(sh.nunc.nylon.Nylon)")
     fun nylonPointcut(nylon: Nylon) {
         //just a pointcut
     }
