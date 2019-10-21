@@ -34,10 +34,6 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
 
     private val expressionParser = SpelExpressionParser()
 
-    @Pointcut("@annotation(sh.nunc.nylon.Nylon)")
-    fun nylonPointcut(nylon: Nylon) {
-        //just a pointcut
-    }
 
     private fun getContextContainingArguments(joinPoint: ProceedingJoinPoint): StandardEvaluationContext {
         val context = StandardEvaluationContext()
@@ -58,7 +54,7 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
     }
 
 
-    @Around("nylonPointcut(nylon)")
+    @Around("@annotation(sh.nunc.nylon.Nylon)")
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint, nylon: Nylon): Any? {
         val context = getContextContainingArguments(joinPoint)
