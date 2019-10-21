@@ -9,6 +9,7 @@ import org.aspectj.lang.annotation.Around
 import org.aspectj.lang.annotation.Aspect
 import org.aspectj.lang.annotation.Pointcut
 import org.aspectj.lang.reflect.CodeSignature
+import org.aspectj.lang.reflect.MethodSignature
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.cache.CacheManager
 import org.springframework.expression.spel.standard.SpelExpressionParser
@@ -35,7 +36,7 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
     private val expressionParser = SpelExpressionParser()
 
     @Pointcut("@annotation(sh.nunc.nylon.Nylon)")
-    fun nylonPointcut(nylon: Nylon) {
+    fun nylonPointcut() {
         //just a pointcut
     }
 
@@ -58,9 +59,11 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
     }
 
 
-    @Around("nylonPointcut(nylon)")
+    @Around("nylonPointcut()")
     @Throws(Throwable::class)
-    fun nylonCache(nylon: Nylon, joinPoint: ProceedingJoinPoint): Any? {
+    fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
+        val sig = joinPoint.signature as MethodSignature
+        val nylon = sig.method.annotations.filterIsInstance<Nylon>().firstOrNull()!!
         val context = getContextContainingArguments(joinPoint)
         val cacheKey = getCacheKeyFromAnnotationKeyValue(context, nylon.key)
 
