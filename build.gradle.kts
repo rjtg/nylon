@@ -6,6 +6,12 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 val springBootVersion = "2.1.9.RELEASE"
 
+buildscript {
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-allopen:1.3.50")
+    }
+}
+
 plugins {
     kotlin("jvm") version "1.3.50"
     id("idea")
@@ -13,6 +19,7 @@ plugins {
     id("com.palantir.git-version") version "0.11.0" apply true
     id("maven-publish") apply true
     id("com.jfrog.bintray") version "1.8.4"
+
 
 }
 allprojects {
