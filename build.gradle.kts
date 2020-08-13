@@ -60,7 +60,7 @@ allprojects {
         publications {
             create<MavenPublication>("nylon") {
                 groupId = project.group as String
-                artifactId = project.name as String
+                artifactId = project.name
                 version = project.version as String
                 from(components["java"])
                 pom {
@@ -128,6 +128,15 @@ dependencies {
     implementation("io.github.microutils:kotlin-logging:1.6.22")
     implementation("org.aspectj:aspectjweaver:1.9.4")
     implementation("net.jodah:failsafe:2.3.1")
+    testImplementation("io.mockk:mockk:1.10.0")
+    testImplementation("com.ninja-squad:springmockk:2.0.3")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:$springBootVersion") {
+        exclude(module = "mockito-core")
+    }
+    testImplementation("org.assertj:assertj-core:3.11.1")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.2.0")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:5.2.0")
+    testRuntime("org.junit.jupiter:junit-jupiter-engine:5.2.0")
 }
 
 tasks.withType<KotlinCompile> {

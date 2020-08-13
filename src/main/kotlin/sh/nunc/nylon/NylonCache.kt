@@ -24,20 +24,133 @@ private val logger = KotlinLogging.logger {}
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Nylon(val key: String, val softTtlMillis: Long, val timeoutMillis: Long, val cacheName: String, val jitter: Long = 0)
 
-private enum class NylonState {
-    GOOD, BACKGROUND_REFRESH, FETCH
+private sealed class NylonState {
+    data class Good(val value: Any) : NylonState()
+    data class RefreshInBackGround(val value: Any) : NylonState()
+    object FetchNow : NylonState()
 }
+
 
 @Component
 @Aspect
-class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
+class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade) {
 
 
-    private val expressionParser = SpelExpressionParser()
 
     @Pointcut("@annotation(sh.nunc.nylon.Nylon)")
     fun nylonPointcut() {
         //just a pointcut
+    }
+
+    @Around("nylonPointcut()")
+    @Throws(Throwable::class)
+    fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
+        val (nylon, cacheKey) = joinPointUtil.extract(joinPoint)
+        val start = System.currentTimeMillis()
+
+        val cacheValue = cacheFacade.getFromCache(nylon.cacheName, cacheKey)?.let {(v, t) ->
+            if (start - t <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
+                NylonState.Good(v)
+            } else {
+                NylonState.RefreshInBackGround(v)
+            }
+        }?: NylonState.FetchNow
+
+        return when(cacheValue) {
+            NylonState.FetchNow -> {
+                logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
+                cacheFacade.insertNow(joinPoint, nylon.cacheName, cacheKey, nylon.timeoutMillis)
+            }
+            is NylonState.RefreshInBackGround -> {
+                logger.debug { "Using cached value. refreshing value in background." }
+                cacheFacade.updateInBackground(joinPoint, nylon.cacheName, cacheKey, cacheValue.value)
+                cacheValue.value
+            }
+            is NylonState.Good -> {
+                logger.debug { "Using cached value." }
+                cacheValue.value
+            }
+        }
+    }
+
+}
+
+@Component
+class CacheFacade(@Autowired private val cacheManager: CacheManager) {
+
+    fun getFromCache(cacheName:String, key:String): Pair<Any, Long>? {
+        return getCacheValue(cacheName, key)?.let {v ->
+            getInsertionTimeForCacheValue(cacheName, key)?.let {t->
+                Pair(v,t)
+            }
+        }
+    }
+
+    private fun getCacheValue(cacheName: String, key: String): Any? {
+        return try {
+            val cache = cacheManager.getCache(cacheName)
+            cache?.let { valueCache ->
+                valueCache[key]?.get()
+            }
+        } catch (e: RuntimeException){
+            logger.warn {"problem retrieving cached value: $e"}
+            null
+        }
+    }
+
+    private fun getInsertionTimeForCacheValue(cacheName: String, key: String) : Long? {
+        return try {
+            getCacheValue(getInsertionTimeCacheName(cacheName), key) as Long?
+        } catch (e: RuntimeException) {
+            logger.warn {"problem getting insertion time for cached value: $e"}
+            null
+        }
+    }
+
+    private fun getInsertionTimeCacheName(cacheName: String) = "${cacheName}__NYLON_T"
+
+
+    private fun insert(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String): Any? {
+
+        val result = joinPoint.proceed()
+        val time = System.currentTimeMillis()
+
+        val cache = cacheManager.getCache(cacheName)
+        val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
+        cache?.let { realCache ->
+            realCache.put(cacheKey, result)
+            iCache?.put(cacheKey, time)
+            logger.debug { "saved value $result at key $cacheKey" }
+        }
+        return result
+    }
+
+    fun insertNow(
+        joinPoint: ProceedingJoinPoint,
+        cacheName: String,
+        cacheKey: String,
+        timeoutMillis: Long
+    ) : Any? {
+        val timeout: Timeout<Any?> = Timeout.of(Duration.ofMillis(timeoutMillis))
+        val fallback: Fallback<Any?> = Fallback.of { null}
+        return Failsafe.with(fallback, timeout).get { _ -> insert(joinPoint, cacheName, cacheKey)}
+    }
+
+    fun updateInBackground(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String, oldValue: Any) {
+        val fallback: Fallback<Any> = Fallback.of(oldValue)
+        Failsafe.with(fallback).getAsync { _ -> insert(joinPoint, cacheName, cacheKey)}
+    }
+}
+
+@Component
+class JoinPointUtil {
+
+    private val expressionParser = SpelExpressionParser()
+
+    private fun getNylon(joinPoint: ProceedingJoinPoint): Nylon {
+       return(joinPoint.signature as MethodSignature).let {
+            it.method.annotations.filterIsInstance<Nylon>().firstOrNull()!!
+       }
     }
 
     private fun getContextContainingArguments(joinPoint: ProceedingJoinPoint): StandardEvaluationContext {
@@ -58,81 +171,10 @@ class NylonAspectRedis(@Autowired private val cacheManager: CacheManager) {
         return (expression.getValue(context) as List<*>).joinToString(",","[", "]")
     }
 
-
-    @Around("nylonPointcut()")
-    @Throws(Throwable::class)
-    fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
-        val sig = joinPoint.signature as MethodSignature
-        val nylon = sig.method.annotations.filterIsInstance<Nylon>().firstOrNull()!!
-        val context = getContextContainingArguments(joinPoint)
-        val cacheKey = getCacheKeyFromAnnotationKeyValue(context, nylon.key)
-
-        val start = System.currentTimeMillis()
-
-        val cacheValue = getCacheValue(nylon.cacheName, cacheKey)?.let {
-            val time = getInsertionTimeForCacheValue(nylon.cacheName, cacheKey)
-            val state = time?.let {t ->
-                if (start - t <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
-                    NylonState.GOOD
-                } else {
-                    NylonState.BACKGROUND_REFRESH
-                }
-            } ?: NylonState.FETCH
-            Pair(it, state)
-        } ?: Pair(null, NylonState.FETCH)
-        return when(cacheValue.second) {
-            NylonState.FETCH -> {
-                logger.debug { "fetching value downstream. Using Fallback: ${cacheValue.first != null}. Timeout: ${nylon.timeoutMillis} ms." }
-                val timeout: Timeout<Any?> = Timeout.of(Duration.ofMillis(nylon.timeoutMillis))
-                val fallback: Fallback<Any?> = Fallback.of(cacheValue.first)
-                Failsafe.with(fallback, timeout).get { _ -> insert(joinPoint, nylon.cacheName, cacheKey)}
-            }
-            NylonState.BACKGROUND_REFRESH -> {
-                logger.debug { "Using cached value. refreshing value in background." }
-                val fallback: Fallback<Any?> = Fallback.of(cacheValue.first)
-                Failsafe.with(fallback).getAsync { _ -> insert(joinPoint, nylon.cacheName, cacheKey)}
-                cacheValue.first
-            }
-            NylonState.GOOD -> {
-                logger.debug { "Using cached value." }
-                cacheValue.first
-            }
-        }
+    fun extract(joinPoint: ProceedingJoinPoint) : Pair<Nylon, String> {
+        val nylon = getNylon(joinPoint)
+        return Pair(nylon, getCacheKeyFromAnnotationKeyValue(getContextContainingArguments(joinPoint), nylon.key))
     }
 
-    private fun getCacheValue(cacheName: String, key: String): Any? {
-        return try {
-            val cache = cacheManager.getCache(cacheName)
-            cache?.let { valueCache ->
-                valueCache[key]?.get()
-            }
-        } catch (e: Exception){
-            null
-        }
-    }
 
-    private fun getInsertionTimeForCacheValue(cacheName: String, key: String) : Long? {
-        return try {
-            getCacheValue(getInsertionTimeCacheName(cacheName), key) as Long?
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun getInsertionTimeCacheName(cacheName: String) = "${cacheName}__NYLON_T"
-
-
-    private fun insert(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String): Any? {
-
-        val result = joinPoint.proceed()
-        val time = System.currentTimeMillis()
-
-        val cache = cacheManager.getCache(cacheName)
-        val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
-        cache?.let { realCache ->
-            realCache.put(cacheKey, result)
-            iCache?.put(cacheKey, time)
-        }
-        return result
-    }
 }
