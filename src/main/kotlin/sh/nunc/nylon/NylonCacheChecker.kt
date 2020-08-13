@@ -25,7 +25,7 @@ class NylonCacheChecker(@Autowired private val clock: Clock) {
         if (clock.millis() - cacheValue.insertionTime + jitter(nylon) <= nylon.softTtlMillis) {
             NylonState.Good(cacheValue.value)
         } else {
-            NylonState.RefreshInBackGround(cacheValue.value)
+            NylonState.RefreshInBackground(cacheValue.value)
         }
 
 

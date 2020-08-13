@@ -16,7 +16,7 @@ annotation class Nylon(val key: String, val softTtlMillis: Long, val timeoutMill
 
 sealed class NylonState {
     data class Good(val value: Any) : NylonState()
-    data class RefreshInBackGround(val value: Any) : NylonState()
+    data class RefreshInBackground(val value: Any) : NylonState()
     object FetchNow : NylonState()
 }
 
@@ -44,7 +44,7 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
                 logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
                 cacheFacade.insertNow(joinPoint, nylon.cacheName, cacheKey, nylon.timeoutMillis)
             }
-            is NylonState.RefreshInBackGround -> {
+            is NylonState.RefreshInBackground -> {
                 logger.debug { "Using cached value. refreshing value in background." }
                 cacheFacade.updateInBackground(joinPoint, nylon.cacheName, cacheKey, cacheValue.value)
                 cacheValue.value

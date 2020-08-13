@@ -35,7 +35,7 @@ class NylonCacheTest {
     @DisplayName("if checker decides to do backgroundrefresh cashfacade does backgroundrefresh")
     fun testBackgroundRefresh(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
-        every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackGround(nylonValue.value)
+        every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackground(nylonValue.value)
         justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value) }
 
         nylonAspect.nylonCache(joinPoint).let {
