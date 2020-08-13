@@ -28,18 +28,21 @@ private val logger = KotlinLogging.logger {}
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Nylon(val key: String, val softTtlMillis: Long, val timeoutMillis: Long, val cacheName: String, val jitter: Long = 0)
 
-private sealed class NylonState {
+sealed class NylonState {
     data class Good(val value: Any) : NylonState()
     data class RefreshInBackGround(val value: Any) : NylonState()
     object FetchNow : NylonState()
 }
 
+sealed class NylonCacheValue{
+    data class Found(val value: Any, val insertionTime: Long):NylonCacheValue()
+    object Missing:NylonCacheValue()
+}
+
 
 @Component
 @Aspect
-class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade, @Autowired private val clock: Clock) {
-
-
+class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade, @Autowired private val nylonCacheChecker: NylonCacheChecker) {
 
     @Pointcut("@annotation(sh.nunc.nylon.Nylon)")
     fun nylonPointcut() {
@@ -50,17 +53,7 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
         val (nylon, cacheKey) = joinPointUtil.extract(joinPoint)
-        val start = clock.millis()
-
-        val cacheValue = cacheFacade.getFromCache(nylon.cacheName, cacheKey)?.let {(v, t) ->
-            if (start - t <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
-                NylonState.Good(v)
-            } else {
-                NylonState.RefreshInBackGround(v)
-            }
-        }?: NylonState.FetchNow
-
-        return when(cacheValue) {
+        return when(val cacheValue = cacheFacade.getFromCache(nylon.cacheName, cacheKey).let { nylonCacheChecker.check(nylon, it)}) {
             NylonState.FetchNow -> {
                 logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
                 cacheFacade.insertNow(joinPoint, nylon.cacheName, cacheKey, nylon.timeoutMillis)
@@ -80,14 +73,35 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
 }
 
 @Component
+class NylonCacheChecker(@Autowired private val clock: Clock) {
+
+    fun check(nylon: Nylon, cacheValue: NylonCacheValue) : NylonState =
+        when(cacheValue){
+            is NylonCacheValue.Found -> checkFound(nylon, cacheValue)
+            NylonCacheValue.Missing -> NylonState.FetchNow
+        }
+
+
+    private fun checkFound(nylon: Nylon, cacheValue: NylonCacheValue.Found) : NylonState {
+        val start = clock.millis()
+        return if (start - cacheValue.insertionTime <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
+            NylonState.Good(cacheValue.value)
+        } else {
+            NylonState.RefreshInBackGround(cacheValue.value)
+        }
+    }
+
+}
+
+@Component
 class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired private val clock: Clock) {
 
-    fun getFromCache(cacheName:String, key:String): Pair<Any, Long>? {
+    fun getFromCache(cacheName:String, key:String): NylonCacheValue {
         return getCacheValue(cacheName, key)?.let {v ->
             getInsertionTimeForCacheValue(cacheName, key)?.let {t->
-                Pair(v,t)
+                NylonCacheValue.Found(v,t)
             }
-        }
+        } ?: NylonCacheValue.Missing
     }
 
     private fun getCacheValue(cacheName: String, key: String): Any? {
@@ -177,7 +191,7 @@ class JoinPointUtil {
 
     fun extract(joinPoint: ProceedingJoinPoint) : Pair<Nylon, String> {
         val nylon = getNylon(joinPoint)
-        return Pair(nylon, getCacheKeyFromAnnotationKeyValue(getContextContainingArguments(joinPoint), nylon.key))
+        return Pair(nylon,  getCacheKeyFromAnnotationKeyValue(getContextContainingArguments(joinPoint), nylon.key))
     }
 
 

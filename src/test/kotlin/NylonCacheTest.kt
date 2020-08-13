@@ -16,100 +16,67 @@ import java.util.concurrent.TimeUnit
 @DisplayName("Basic tests for the Nylon Cache")
 class NylonCacheTest {
 
+    private val key = "key"
+    private val cacheName = "cache"
+    private val nylonValue = NylonCacheValue.Found("cached", 0L)
+
     @BeforeEach
-    fun setUp() = MockKAnnotations.init(this)
-
-    @MockK lateinit var cacheManager: CacheManager
-    @MockK lateinit var cacheFacade: CacheFacade
-    @MockK lateinit var clock: Clock
-    @MockK lateinit var joinPointUtil: JoinPointUtil
-    @InjectMockKs lateinit var nylonAspect: NylonAspectRedis
-
-    @Test
-    @DisplayName("check whether mockobjects are initialized correct")
-    fun testCorrectInitialization(){
-        Assertions.assertNotNull(nylonAspect)
-        Assertions.assertNotNull(nylonAspect.run {
-            cacheManager
-        })
+    fun setUp() {
+        MockKAnnotations.init(this)
+        every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
+        every { annotation.key } returns key
+        every { annotation.cacheName } returns cacheName
+        every { annotation.timeoutMillis } returns 100
     }
+
+    @MockK lateinit var cacheFacade: CacheFacade
+    @MockK lateinit var nylonCacheChecker: NylonCacheChecker
+    @MockK lateinit var joinPointUtil: JoinPointUtil
+    @MockK lateinit var joinPoint: ProceedingJoinPoint
+    @MockK lateinit var annotation: Nylon
+    @InjectMockKs lateinit var nylonAspect: NylonAspectRedis
 
     @Test
     @DisplayName("check whether old items update in background")
     fun testBackgroundFetch(){
-        val annotation = mockk<Nylon>()
-        val joinPoint = mockk<ProceedingJoinPoint>()
-        val key = "key"
-        val ttl = 100L
-        val t = 0L
-        every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
-        every { annotation.key } returns key
-        val cacheName = "cache"
-        every { annotation.cacheName } returns cacheName
-        every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns ttl
-        every { annotation.timeoutMillis } returns 100
-        every { clock.millis() } returns ttl + t + 1L
-        val cached = "cachedValue"
-        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, t)
-        justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, cached) }
+        every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
+        every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackGround(nylonValue.value)
+        justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value) }
 
-        val ret = nylonAspect.nylonCache(joinPoint)
-        Assertions.assertEquals(cached, ret)
+        nylonAspect.nylonCache(joinPoint).let {
+            Assertions.assertEquals(nylonValue.value, it)
+        }
         verifyAll {
             cacheFacade.getFromCache(cacheName, key)
-            cacheFacade.updateInBackground(joinPoint, cacheName, key, cached)
+            cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value)
         }
     }
 
 
     @Test
-    @DisplayName("check whether current items are directly returned")
+    @DisplayName("check whether OK items are directly returned")
     fun testReturnDirect(){
-        val annotation = mockk<Nylon>()
-        val joinPoint = mockk<ProceedingJoinPoint>()
-        val key = "key"
-        val ttl = 100L
-        val t = 0L
-        every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
-        every { annotation.key } returns key
-        val cacheName = "cache"
-        every { annotation.cacheName } returns cacheName
-        every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns ttl
-        every { annotation.timeoutMillis } returns 100
-        every { clock.millis() } returns ttl + t
-        val cached = "cachedValue"
-        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, t)
+        every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
+        every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.Good(nylonValue.value)
 
-        val ret = nylonAspect.nylonCache(joinPoint)
-        Assertions.assertEquals(cached, ret)
+        nylonAspect.nylonCache(joinPoint).let {
+            Assertions.assertEquals(nylonValue.value, it)
+        }
 
         verifyAll { cacheFacade.getFromCache(cacheName, key) }
     }
 
     @Test
-    @DisplayName("check whether missing items are directly fetched")
-    fun testFetchDirect(){
-        val annotation = mockk<Nylon>()
-        val joinPoint = mockk<ProceedingJoinPoint>()
-        val key = "key"
-        val ttl = 100L
-        val t = 0L
-        every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
-        every { annotation.key } returns key
-        val cacheName = "cache"
-        every { annotation.cacheName } returns cacheName
-        every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns ttl
-        every { annotation.timeoutMillis } returns 100
-        every { clock.millis() } returns ttl + t + 1L
-        val cached = "cachedValue"
-        every { cacheFacade.getFromCache(cacheName, key) } returns null
-        every { cacheFacade.insertNow(joinPoint, cacheName, key, any()) } returns cached
+    @DisplayName("check whether failed items are fetched immediately")
+    fun testFetchCheckFailed(){
+        val newVal = "NEW"
+        every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
+        every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.FetchNow
+        every { cacheFacade.insertNow(joinPoint, cacheName, key, any()) } returns newVal
 
-        val ret = nylonAspect.nylonCache(joinPoint)
-        Assertions.assertEquals(cached, ret)
+        nylonAspect.nylonCache(joinPoint).let {
+            Assertions.assertEquals(newVal, it)
+        }
 
         verifyAll {
             cacheFacade.getFromCache(cacheName, key)
