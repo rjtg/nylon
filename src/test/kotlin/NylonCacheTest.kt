@@ -37,8 +37,8 @@ class NylonCacheTest {
     @InjectMockKs lateinit var nylonAspect: NylonAspectRedis
 
     @Test
-    @DisplayName("check whether old items update in background")
-    fun testBackgroundFetch(){
+    @DisplayName("if checker decides to do backgroundrefresh cashfacade does backgroundrefresh")
+    fun testBackgroundRefresh(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackGround(nylonValue.value)
         justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value) }
@@ -54,7 +54,7 @@ class NylonCacheTest {
 
 
     @Test
-    @DisplayName("check whether OK items are directly returned")
+    @DisplayName("if old value passes check, nothing is done")
     fun testReturnDirect(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.Good(nylonValue.value)
@@ -67,7 +67,7 @@ class NylonCacheTest {
     }
 
     @Test
-    @DisplayName("check whether failed items are fetched immediately")
+    @DisplayName("if old value fails check, new item is fetched and immediately put into cache")
     fun testFetchCheckFailed(){
         val newVal = "NEW"
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
@@ -88,72 +88,72 @@ class NylonCacheTest {
 
 @DisplayName("test if cache facade works")
 class CacheFacadeTest {
-    @BeforeEach
-    fun setUp() = MockKAnnotations.init(this)
+
+    private val cacheName = "cacheName"
+    private val cacheKey = "key"
 
     @MockK lateinit var cacheManager: CacheManager
+
     @MockK lateinit var clock: Clock
+    @MockK lateinit var valueCache: Cache
+    @MockK lateinit var timeCache: Cache
     @InjectMockKs lateinit var cacheFacade: CacheFacade
+
+    @BeforeEach
+    fun setUp() {
+        MockKAnnotations.init(this)
+        every { cacheManager.getCache(cacheName) } returns valueCache
+        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
+    }
 
     @DisplayName("check whether facade provides values from underlying manager")
     @Test
     fun testGetFromCacheOk() {
-        val valueCache = mockk<Cache>()
-        val timeCache = mockk<Cache>()
-        val cacheName = "cacheName"
-        val cacheKey = "key"
         val cachedValue = Cache.ValueWrapper { "cached" }
-        val t = 1000L
-        val cachedTime = Cache.ValueWrapper { t }
-        every { cacheManager.getCache(cacheName) } returns valueCache
-        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
+        val cachedTime = Cache.ValueWrapper { 1000L }
+
         every { valueCache[cacheKey] } returns cachedValue
         every { timeCache[cacheKey] } returns cachedTime
-        every { clock.millis() } returns t
-        Assertions.assertEquals(Pair(cachedValue.get(), cachedTime.get()), cacheFacade.getFromCache(cacheName, cacheKey))
+
+        cacheFacade.getFromCache(cacheName, cacheKey).let {
+            Assertions.assertEquals(NylonCacheValue.Found(cachedValue.get()!!, cachedTime.get() as Long), it)
+        }
+
         verifyAll {
-            cacheManager.getCache(cacheName)
-            cacheManager.getCache("${cacheName}__NYLON_T")
             valueCache[cacheKey]
             timeCache[cacheKey]
         }
     }
 
-    @DisplayName("check whether missing time information does not respond with a value")
+    @DisplayName("if insertion time misses, result is NylonCacheValue.Missing")
     @Test
     fun testGetFromCacheNoTime() {
-        val valueCache = mockk<Cache>()
-        val timeCache = mockk<Cache>()
-        val cacheName = "cacheName"
-        val cacheKey = "key"
         val cachedValue = Cache.ValueWrapper { "cached" }
-        every { cacheManager.getCache(cacheName) } returns valueCache
-        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { valueCache[cacheKey] } returns cachedValue
         every { timeCache[cacheKey] } returns null
-        Assertions.assertEquals(null, cacheFacade.getFromCache(cacheName, cacheKey))
+
+        cacheFacade.getFromCache(cacheName, cacheKey).let {
+            Assertions.assertEquals(NylonCacheValue.Missing, it)
+        }
+
         verifyAll {
-            cacheManager.getCache(cacheName)
-            cacheManager.getCache("${cacheName}__NYLON_T")
             valueCache[cacheKey]
             timeCache[cacheKey]
         }
     }
 
-    @DisplayName("check whether missing value does not leas to a response")
+    @DisplayName("if no value is cahced, result is NylonCacheValue.Missing")
     @Test
     fun testGetFromCacheNoValue() {
-        val valueCache = mockk<Cache>()
-        val timeCache = mockk<Cache>()
-        val cacheName = "cacheName"
-        val cacheKey = "key"
         val t = System.currentTimeMillis()
         val cachedTime = Cache.ValueWrapper { t }
-        every { cacheManager.getCache(cacheName) } returns valueCache
-        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { valueCache[cacheKey] } returns null
         every { timeCache[cacheKey] } returns cachedTime
-        Assertions.assertEquals(null, cacheFacade.getFromCache(cacheName, cacheKey))
+
+        cacheFacade.getFromCache(cacheName, cacheKey).let {
+            Assertions.assertEquals(NylonCacheValue.Missing, it)
+        }
+
         verifyAll {
             cacheManager.getCache(cacheName)
             valueCache[cacheKey]
@@ -164,15 +164,9 @@ class CacheFacadeTest {
     @Test
     fun testInsertNow(){
         val joinPoint = mockk<ProceedingJoinPoint>()
-        val valueCache = mockk<Cache>()
-        val timeCache = mockk<Cache>()
-        val cacheName = "cacheName"
-        val cacheKey = "key"
         val newValue = "new"
 
         every { clock.millis() } returns System.currentTimeMillis()
-        every { cacheManager.getCache(cacheName) } returns valueCache
-        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { joinPoint.proceed() } returns newValue
         justRun {
             valueCache.put(cacheKey, newValue)
@@ -180,31 +174,25 @@ class CacheFacadeTest {
         justRun {
             timeCache.put(cacheKey, any())
         }
-        val retVal = cacheFacade.insertNow(joinPoint, cacheName, cacheKey, 2000)
+        cacheFacade.insertNow(joinPoint, cacheName, cacheKey, 2000).let {
+            Assertions.assertEquals(newValue, it)
+        }
 
         verifyAll {
             joinPoint.proceed()
-            cacheManager.getCache(cacheName)
-            cacheManager.getCache("${cacheName}__NYLON_T")
             valueCache.put(cacheKey, newValue)
             timeCache.put(cacheKey, any())
         }
-        Assertions.assertEquals(newValue, retVal)
+
     }
 
     @DisplayName("test whether update in background fills underlying cahces correct")
     @Test
     fun testInsertBackground(){
         val joinPoint = mockk<ProceedingJoinPoint>()
-        val valueCache = mockk<Cache>()
-        val timeCache = mockk<Cache>()
-        val cacheName = "cacheName"
-        val cacheKey = "key"
         val newValue = "new"
         val t = 10000L
 
-        every { cacheManager.getCache(cacheName) } returns valueCache
-        every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { joinPoint.proceed() } returns newValue
         every { clock.millis() } returns t
         justRun {
@@ -219,8 +207,6 @@ class CacheFacadeTest {
         pool.awaitTermination(5, TimeUnit.SECONDS)
         verifyAll {
             joinPoint.proceed()
-            cacheManager.getCache(cacheName)
-            cacheManager.getCache("${cacheName}__NYLON_T")
             valueCache.put(cacheKey, newValue)
             timeCache.put(cacheKey, t)
         }
