@@ -8,10 +8,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.cache.Cache
 import org.springframework.cache.CacheManager
-import sh.nunc.nylon.CacheFacade
-import sh.nunc.nylon.JoinPointUtil
-import sh.nunc.nylon.Nylon
-import sh.nunc.nylon.NylonAspectRedis
+import sh.nunc.nylon.*
+import java.time.Clock
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit
 
@@ -23,6 +21,7 @@ class NylonCacheTest {
 
     @MockK lateinit var cacheManager: CacheManager
     @MockK lateinit var cacheFacade: CacheFacade
+    @MockK lateinit var clock: Clock
     @MockK lateinit var joinPointUtil: JoinPointUtil
     @InjectMockKs lateinit var nylonAspect: NylonAspectRedis
 
@@ -41,15 +40,18 @@ class NylonCacheTest {
         val annotation = mockk<Nylon>()
         val joinPoint = mockk<ProceedingJoinPoint>()
         val key = "key"
+        val ttl = 100L
+        val t = 0L
         every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
         every { annotation.key } returns key
         val cacheName = "cache"
         every { annotation.cacheName } returns cacheName
         every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns 100
+        every { annotation.softTtlMillis } returns ttl
         every { annotation.timeoutMillis } returns 100
+        every { clock.millis() } returns ttl + t + 1L
         val cached = "cachedValue"
-        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, 0L)
+        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, t)
         justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, cached) }
 
         val ret = nylonAspect.nylonCache(joinPoint)
@@ -67,15 +69,18 @@ class NylonCacheTest {
         val annotation = mockk<Nylon>()
         val joinPoint = mockk<ProceedingJoinPoint>()
         val key = "key"
+        val ttl = 100L
+        val t = 0L
         every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
         every { annotation.key } returns key
         val cacheName = "cache"
         every { annotation.cacheName } returns cacheName
         every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns 100
+        every { annotation.softTtlMillis } returns ttl
         every { annotation.timeoutMillis } returns 100
+        every { clock.millis() } returns ttl + t
         val cached = "cachedValue"
-        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, System.currentTimeMillis())
+        every { cacheFacade.getFromCache(cacheName, key) } returns Pair(cached, t)
 
         val ret = nylonAspect.nylonCache(joinPoint)
         Assertions.assertEquals(cached, ret)
@@ -89,13 +94,16 @@ class NylonCacheTest {
         val annotation = mockk<Nylon>()
         val joinPoint = mockk<ProceedingJoinPoint>()
         val key = "key"
+        val ttl = 100L
+        val t = 0L
         every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
         every { annotation.key } returns key
         val cacheName = "cache"
         every { annotation.cacheName } returns cacheName
         every { annotation.jitter } returns 0
-        every { annotation.softTtlMillis } returns 100
+        every { annotation.softTtlMillis } returns ttl
         every { annotation.timeoutMillis } returns 100
+        every { clock.millis() } returns ttl + t + 1L
         val cached = "cachedValue"
         every { cacheFacade.getFromCache(cacheName, key) } returns null
         every { cacheFacade.insertNow(joinPoint, cacheName, key, any()) } returns cached
@@ -117,6 +125,7 @@ class CacheFacadeTest {
     fun setUp() = MockKAnnotations.init(this)
 
     @MockK lateinit var cacheManager: CacheManager
+    @MockK lateinit var clock: Clock
     @InjectMockKs lateinit var cacheFacade: CacheFacade
 
     @DisplayName("check whether facade provides values from underlying manager")
@@ -127,12 +136,13 @@ class CacheFacadeTest {
         val cacheName = "cacheName"
         val cacheKey = "key"
         val cachedValue = Cache.ValueWrapper { "cached" }
-        val t = System.currentTimeMillis()
+        val t = 1000L
         val cachedTime = Cache.ValueWrapper { t }
         every { cacheManager.getCache(cacheName) } returns valueCache
         every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { valueCache[cacheKey] } returns cachedValue
         every { timeCache[cacheKey] } returns cachedTime
+        every { clock.millis() } returns t
         Assertions.assertEquals(Pair(cachedValue.get(), cachedTime.get()), cacheFacade.getFromCache(cacheName, cacheKey))
         verifyAll {
             cacheManager.getCache(cacheName)
@@ -193,7 +203,7 @@ class CacheFacadeTest {
         val cacheKey = "key"
         val newValue = "new"
 
-
+        every { clock.millis() } returns System.currentTimeMillis()
         every { cacheManager.getCache(cacheName) } returns valueCache
         every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { joinPoint.proceed() } returns newValue
@@ -215,6 +225,7 @@ class CacheFacadeTest {
         Assertions.assertEquals(newValue, retVal)
     }
 
+    @DisplayName("test whether update in background fills underlying cahces correct")
     @Test
     fun testInsertBackground(){
         val joinPoint = mockk<ProceedingJoinPoint>()
@@ -223,16 +234,17 @@ class CacheFacadeTest {
         val cacheName = "cacheName"
         val cacheKey = "key"
         val newValue = "new"
-
+        val t = 10000L
 
         every { cacheManager.getCache(cacheName) } returns valueCache
         every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
         every { joinPoint.proceed() } returns newValue
+        every { clock.millis() } returns t
         justRun {
             valueCache.put(cacheKey, newValue)
         }
         justRun {
-            timeCache.put(cacheKey, any())
+            timeCache.put(cacheKey, t)
         }
         cacheFacade.updateInBackground(joinPoint, cacheName, cacheKey, "old")
         val pool = ForkJoinPool.commonPool()
@@ -243,7 +255,7 @@ class CacheFacadeTest {
             cacheManager.getCache(cacheName)
             cacheManager.getCache("${cacheName}__NYLON_T")
             valueCache.put(cacheKey, newValue)
-            timeCache.put(cacheKey, any())
+            timeCache.put(cacheKey, t)
         }
     }
 }

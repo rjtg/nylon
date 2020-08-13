@@ -11,10 +11,14 @@ import org.aspectj.lang.annotation.Pointcut
 import org.aspectj.lang.reflect.CodeSignature
 import org.aspectj.lang.reflect.MethodSignature
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.cache.CacheManager
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.expression.spel.support.StandardEvaluationContext
 import org.springframework.stereotype.Component
+import java.time.Clock
 import java.time.Duration
 import kotlin.random.Random
 
@@ -33,7 +37,7 @@ private sealed class NylonState {
 
 @Component
 @Aspect
-class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade) {
+class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade, @Autowired private val clock: Clock) {
 
 
 
@@ -46,7 +50,7 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
         val (nylon, cacheKey) = joinPointUtil.extract(joinPoint)
-        val start = System.currentTimeMillis()
+        val start = clock.millis()
 
         val cacheValue = cacheFacade.getFromCache(nylon.cacheName, cacheKey)?.let {(v, t) ->
             if (start - t <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(-nylon.jitter, nylon.jitter) else 0) {
@@ -76,7 +80,7 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
 }
 
 @Component
-class CacheFacade(@Autowired private val cacheManager: CacheManager) {
+class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired private val clock: Clock) {
 
     fun getFromCache(cacheName:String, key:String): Pair<Any, Long>? {
         return getCacheValue(cacheName, key)?.let {v ->
@@ -113,7 +117,7 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager) {
     private fun insert(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String): Any? {
 
         val result = joinPoint.proceed()
-        val time = System.currentTimeMillis()
+        val time = clock.millis()
 
         val cache = cacheManager.getCache(cacheName)
         val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
@@ -177,4 +181,14 @@ class JoinPointUtil {
     }
 
 
+}
+
+@Configuration
+class NylonConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    fun getSystemUtcClock(){
+        Clock.systemUTC()
+    }
 }
