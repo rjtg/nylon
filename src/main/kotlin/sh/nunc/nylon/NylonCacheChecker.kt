@@ -14,17 +14,19 @@ class NylonCacheChecker(@Autowired private val clock: Clock) {
             NylonCacheValue.Missing -> NylonState.FetchNow
         }
 
+    private fun jitter(nylon: Nylon): Long =
+        if (nylon.jitter > 0) Random.nextLong(
+            -nylon.jitter,
+            nylon.jitter
+        ) else 0
 
-    private fun checkFound(nylon: Nylon, cacheValue: NylonCacheValue.Found) : NylonState {
-        val start = clock.millis()
-        return if (start - cacheValue.insertionTime <= nylon.softTtlMillis + if (nylon.jitter > 0) Random.nextLong(
-                -nylon.jitter,
-                nylon.jitter
-            ) else 0) {
+
+    private fun checkFound(nylon: Nylon, cacheValue: NylonCacheValue.Found) : NylonState =
+        if (clock.millis() - cacheValue.insertionTime + jitter(nylon) <= nylon.softTtlMillis) {
             NylonState.Good(cacheValue.value)
         } else {
             NylonState.RefreshInBackGround(cacheValue.value)
         }
-    }
+
 
 }
