@@ -48,41 +48,44 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
     private fun getInsertionTimeCacheName(cacheName: String) = "${cacheName}__NYLON_T"
 
 
-    private fun insert(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String): Any? {
+    private fun insert(cacheName: String, cacheKey: String, newValue: Any?) {
 
-        val result = joinPoint.proceed()
         val time = clock.millis()
 
         val cache = cacheManager.getCache(cacheName)
         val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
         cache?.let { realCache ->
-            realCache.put(cacheKey, result)
+            realCache.put(cacheKey, newValue)
             iCache?.put(cacheKey, time)
-            logger.debug { "saved value $result at key $cacheKey" }
+            logger.debug { "saved value $newValue at key $cacheKey" }
         }
-        return result
     }
 
     fun insertNow(
         joinPoint: ProceedingJoinPoint,
-        cacheName: String,
-        cacheKey: String,
-        timeoutMillis: Long
+        nylon: Nylon,
+        cacheKey: String
     ) : Any? {
         val timeout: Timeout<Any?> =
             Timeout.of(
-                Duration.ofMillis(timeoutMillis)
+                Duration.ofMillis(nylon.timeoutMillis)
             )
         val fallback: Fallback<Any?> =
             Fallback.of { null }
+        logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
         return Failsafe.with(fallback, timeout)
-            .get { _ -> insert(joinPoint, cacheName, cacheKey)}
+            .onFailure { e -> logger.warn { "failed to fetch downstream element. ${e.failure}" } }
+            .get { _ -> joinPoint.proceed()?.also { insert(nylon.cacheName, cacheKey, it)}}
     }
 
-    fun updateInBackground(joinPoint: ProceedingJoinPoint, cacheName: String, cacheKey: String, oldValue: Any) {
-        val fallback: Fallback<Any> =
-            Fallback.of(oldValue)
-        Failsafe.with(fallback)
-            .getAsync { _ -> insert(joinPoint, cacheName, cacheKey)}
+    fun updateInBackground(joinPoint: ProceedingJoinPoint, nylon: Nylon, cacheKey: String, oldValue: Any) {
+        val timeout: Timeout<Any?> =
+            Timeout.of(
+                Duration.ofMillis(nylon.timeoutMillis)
+            )
+        logger.debug { "Using cached value. refreshing value in background." }
+        Failsafe.with(timeout)
+            .onFailure { e -> logger.warn { "failed to fetch downstream element. ${e.failure}" } }
+            .getAsync { _ -> joinPoint.proceed()?.also {insert(nylon.cacheName, cacheKey, it)}}
     }
 }

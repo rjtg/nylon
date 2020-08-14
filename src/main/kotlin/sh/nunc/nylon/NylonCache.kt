@@ -1,6 +1,5 @@
 package sh.nunc.nylon
 
-import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
 import org.aspectj.lang.annotation.Aspect
@@ -8,7 +7,6 @@ import org.aspectj.lang.annotation.Pointcut
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 
-private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -35,26 +33,25 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
         //just a pointcut
     }
 
+    private fun getChecked(nylon: Nylon, cacheKey: String) = cacheFacade.getFromCache(nylon.cacheName, cacheKey).let { nylonCacheChecker.check(nylon, it) }
+
     @Around("nylonPointcut()")
     @Throws(Throwable::class)
-    fun nylonCache(joinPoint: ProceedingJoinPoint): Any? {
-        val (nylon, cacheKey) = joinPointUtil.extract(joinPoint)
-        return when(val cacheValue = cacheFacade.getFromCache(nylon.cacheName, cacheKey).let { nylonCacheChecker.check(nylon, it)}) {
-            NylonState.FetchNow -> {
-                logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
-                cacheFacade.insertNow(joinPoint, nylon.cacheName, cacheKey, nylon.timeoutMillis)
-            }
-            is NylonState.RefreshInBackground -> {
-                logger.debug { "Using cached value. refreshing value in background." }
-                cacheFacade.updateInBackground(joinPoint, nylon.cacheName, cacheKey, cacheValue.value)
-                cacheValue.value
-            }
-            is NylonState.Good -> {
-                logger.debug { "Using cached value." }
-                cacheValue.value
+    fun nylonCache(joinPoint: ProceedingJoinPoint): Any? =
+        joinPointUtil.extract(joinPoint).let { (nylon, cacheKey) -> 
+            when (val cacheValue = getChecked(nylon, cacheKey)) {
+                NylonState.FetchNow -> {
+                    cacheFacade.insertNow(joinPoint, nylon, cacheKey)
+                }
+                is NylonState.RefreshInBackground -> {
+                    cacheValue.value.also {
+                        cacheFacade.updateInBackground(joinPoint, nylon, cacheKey, it)
+                    }
+                }
+                is NylonState.Good -> {
+                    cacheValue.value
+                }
             }
         }
-    }
-
 }
 

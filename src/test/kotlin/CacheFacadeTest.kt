@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.cache.Cache
 import org.springframework.cache.CacheManager
 import sh.nunc.nylon.CacheFacade
+import sh.nunc.nylon.Nylon
 import sh.nunc.nylon.NylonCacheValue
 import java.time.Clock
 import java.util.concurrent.ForkJoinPool
@@ -22,7 +23,8 @@ class CacheFacadeTest {
 
     @MockK
     lateinit var cacheManager: CacheManager
-
+    @MockK
+    lateinit var nylon: Nylon
     @MockK
     lateinit var clock: Clock
     @MockK
@@ -37,6 +39,8 @@ class CacheFacadeTest {
         MockKAnnotations.init(this)
         every { cacheManager.getCache(cacheName) } returns valueCache
         every { cacheManager.getCache("${cacheName}__NYLON_T") } returns timeCache
+        every { nylon.cacheName } returns cacheName
+        every { nylon.timeoutMillis } returns 1000L
     }
 
     @DisplayName("check whether facade provides values from underlying manager")
@@ -118,7 +122,7 @@ class CacheFacadeTest {
         justRun {
             timeCache.put(cacheKey, any())
         }
-        cacheFacade.insertNow(joinPoint, cacheName, cacheKey, 2000).let {
+        cacheFacade.insertNow(joinPoint, nylon, cacheKey).let {
             Assertions.assertEquals(newValue, it)
         }
 
@@ -145,7 +149,7 @@ class CacheFacadeTest {
         justRun {
             timeCache.put(cacheKey, t)
         }
-        cacheFacade.updateInBackground(joinPoint, cacheName, cacheKey, "old")
+        cacheFacade.updateInBackground(joinPoint, nylon, cacheKey, "old")
         val pool = ForkJoinPool.commonPool()
         pool.shutdown()
         pool.awaitTermination(5, TimeUnit.SECONDS)

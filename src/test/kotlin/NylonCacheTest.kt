@@ -36,14 +36,14 @@ class NylonCacheTest {
     fun testBackgroundRefresh(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackground(nylonValue.value)
-        justRun { cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value) }
+        justRun { cacheFacade.updateInBackground(joinPoint, annotation, key, nylonValue.value) }
 
         nylonAspect.nylonCache(joinPoint).let {
             Assertions.assertEquals(nylonValue.value, it)
         }
         verifyAll {
             cacheFacade.getFromCache(cacheName, key)
-            cacheFacade.updateInBackground(joinPoint, cacheName, key, nylonValue.value)
+            cacheFacade.updateInBackground(joinPoint, annotation, key, nylonValue.value)
         }
     }
 
@@ -67,7 +67,7 @@ class NylonCacheTest {
         val newVal = "NEW"
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.FetchNow
-        every { cacheFacade.insertNow(joinPoint, cacheName, key, any()) } returns newVal
+        every { cacheFacade.insertNow(joinPoint, annotation, key) } returns newVal
 
         nylonAspect.nylonCache(joinPoint).let {
             Assertions.assertEquals(newVal, it)
@@ -75,7 +75,7 @@ class NylonCacheTest {
 
         verifyAll {
             cacheFacade.getFromCache(cacheName, key)
-            cacheFacade.insertNow(joinPoint, cacheName, key, any())
+            cacheFacade.insertNow(joinPoint, annotation, key)
         }
     }
 
