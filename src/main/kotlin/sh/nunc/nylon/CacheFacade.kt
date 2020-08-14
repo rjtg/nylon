@@ -26,9 +26,8 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
 
     private fun getCacheValue(cacheName: String, key: String): Any? {
         return try {
-            val cache = cacheManager.getCache(cacheName)
-            cache?.let { valueCache ->
-                valueCache[key]?.get()
+            cacheManager.getCache(cacheName)?.let {
+                it[key]?.get()
             }
         } catch (e: RuntimeException){
             logger.warn {"problem retrieving cached value: $e"}
@@ -52,11 +51,11 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
 
         val time = clock.millis()
 
-        val cache = cacheManager.getCache(cacheName)
-        val iCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
-        cache?.let { realCache ->
-            realCache.put(cacheKey, newValue)
-            iCache?.put(cacheKey, time)
+        val valueCache = cacheManager.getCache(cacheName)
+        val timeCache = cacheManager.getCache(getInsertionTimeCacheName(cacheName))
+        if (valueCache != null && timeCache != null) {
+            valueCache.put(cacheKey, newValue)
+            timeCache.put(cacheKey, time)
             logger.debug { "saved value $newValue at key $cacheKey" }
         }
     }
