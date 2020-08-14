@@ -77,7 +77,7 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
             .get { _ -> joinPoint.proceed()?.also { insert(nylon.cacheName, cacheKey, it)}}
     }
 
-    fun updateInBackground(joinPoint: ProceedingJoinPoint, nylon: Nylon, cacheKey: String, oldValue: Any) {
+    fun insertInBackground(joinPoint: ProceedingJoinPoint, nylon: Nylon, cacheKey: String) {
         val timeout: Timeout<Any?> =
             Timeout.of(
                 Duration.ofMillis(nylon.timeoutMillis)

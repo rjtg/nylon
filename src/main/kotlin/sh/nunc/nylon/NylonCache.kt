@@ -44,9 +44,8 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
                     cacheFacade.insertNow(joinPoint, nylon, cacheKey)
                 }
                 is NylonState.RefreshInBackground -> {
-                    cacheValue.value.also {
-                        cacheFacade.updateInBackground(joinPoint, nylon, cacheKey, it)
-                    }
+                    cacheFacade.insertInBackground(joinPoint, nylon, cacheKey)
+                    cacheValue.value
                 }
                 is NylonState.Good -> {
                     cacheValue.value

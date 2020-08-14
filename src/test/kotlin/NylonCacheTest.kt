@@ -36,14 +36,14 @@ class NylonCacheTest {
     fun testBackgroundRefresh(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackground(nylonValue.value)
-        justRun { cacheFacade.updateInBackground(joinPoint, annotation, key, nylonValue.value) }
+        justRun { cacheFacade.insertInBackground(joinPoint, annotation, key) }
 
         nylonAspect.nylonCache(joinPoint).let {
             Assertions.assertEquals(nylonValue.value, it)
         }
         verifyAll {
             cacheFacade.getFromCache(cacheName, key)
-            cacheFacade.updateInBackground(joinPoint, annotation, key, nylonValue.value)
+            cacheFacade.insertInBackground(joinPoint, annotation, key)
         }
     }
 

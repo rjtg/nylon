@@ -149,7 +149,7 @@ class CacheFacadeTest {
         justRun {
             timeCache.put(cacheKey, t)
         }
-        cacheFacade.updateInBackground(joinPoint, nylon, cacheKey, "old")
+        cacheFacade.insertInBackground(joinPoint, nylon, cacheKey)
         val pool = ForkJoinPool.commonPool()
         pool.shutdown()
         pool.awaitTermination(5, TimeUnit.SECONDS)
