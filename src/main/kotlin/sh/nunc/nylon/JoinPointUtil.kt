@@ -13,8 +13,8 @@ class JoinPointUtil {
     private val expressionParser =
         SpelExpressionParser()
 
-    private fun getNylon(joinPoint: ProceedingJoinPoint): Nylon {
-       return(joinPoint.signature as MethodSignature).let {
+    private fun ProceedingJoinPoint.getNylon(): Nylon {
+       return(this.signature as MethodSignature).let {
             it.method.annotations.filterIsInstance<Nylon>().firstOrNull()!!
        }
     }
@@ -37,10 +37,10 @@ class JoinPointUtil {
         return (expression.getValue(context) as List<*>).joinToString(",","[", "]")
     }
 
-    fun extract(joinPoint: ProceedingJoinPoint) : Pair<Nylon, String> {
-        val nylon = getNylon(joinPoint)
-        return Pair(nylon,  getCacheKeyFromAnnotationKeyValue(getContextContainingArguments(joinPoint), nylon.key))
-    }
+    fun extract(joinPoint: ProceedingJoinPoint) : Pair<Nylon, String> =
+        joinPoint.getNylon().let {
+            Pair(it, getCacheKeyFromAnnotationKeyValue(getContextContainingArguments(joinPoint), it.key))
+        }
 
 
 }
