@@ -1,12 +1,15 @@
 package sh.nunc.nylon
 
+import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
 import org.aspectj.lang.annotation.Aspect
 import org.aspectj.lang.annotation.Pointcut
+import org.aspectj.lang.reflect.MethodSignature
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 
+private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -38,17 +41,24 @@ class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Aut
     @Around("nylonPointcut()")
     @Throws(Throwable::class)
     fun nylonCache(joinPoint: ProceedingJoinPoint): Any? =
-        joinPointUtil.extract(joinPoint).let { (nylon, cacheKey) -> 
-            when (val cacheValue = getChecked(nylon, cacheKey)) {
-                NylonState.FetchNow -> {
-                    cacheFacade.insertNow(joinPoint, nylon, cacheKey)
+        when (val extract = joinPointUtil.extract(joinPoint)) {
+            is NylonJoinPointExtract.ValidExtract -> {
+                when (val cacheValue = getChecked(extract.nylon, extract.cacheKey)) {
+                    NylonState.FetchNow -> {
+                        cacheFacade.insertNow(joinPoint, extract.nylon, extract.cacheKey)
+                    }
+                    is NylonState.RefreshInBackground -> {
+                        cacheFacade.insertInBackground(joinPoint, extract.nylon, extract.cacheKey)
+                        cacheValue.value
+                    }
+                    is NylonState.Good -> {
+                        cacheValue.value
+                    }
                 }
-                is NylonState.RefreshInBackground -> {
-                    cacheFacade.insertInBackground(joinPoint, nylon, cacheKey)
-                    cacheValue.value
-                }
-                is NylonState.Good -> {
-                    cacheValue.value
+            }
+            is NylonJoinPointExtract.InValidExtract -> {
+                (joinPoint.signature as MethodSignature).also {
+                    logger.error { "Error handling joinpoint for ${it.declaringTypeName}::${it.method.name}: ${extract.cause}" }
                 }
             }
         }

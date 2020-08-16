@@ -18,7 +18,7 @@ class NylonCacheTest {
     @BeforeEach
     fun setUp() {
         MockKAnnotations.init(this)
-        every { joinPointUtil.extract(joinPoint)} returns Pair(annotation, key)
+        every { joinPointUtil.extract(joinPoint)} returns NylonJoinPointExtract.ValidExtract(annotation, key)
         every { annotation.key } returns key
         every { annotation.cacheName } returns cacheName
         every { annotation.timeoutMillis } returns 100

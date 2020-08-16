@@ -6,6 +6,14 @@ import org.aspectj.lang.reflect.MethodSignature
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.expression.spel.support.StandardEvaluationContext
 import org.springframework.stereotype.Component
+import java.lang.RuntimeException
+
+
+
+sealed class NylonJoinPointExtract {
+    data class ValidExtract(val nylon:Nylon, val cacheKey: String): NylonJoinPointExtract()
+    data class InValidExtract(val cause: Throwable) : NylonJoinPointExtract()
+}
 
 @Component
 class JoinPointUtil {
@@ -14,9 +22,7 @@ class JoinPointUtil {
         SpelExpressionParser()
 
     private fun ProceedingJoinPoint.getNylon(): Nylon =
-       (signature as MethodSignature).let {
-            it.method.annotations.filterIsInstance<Nylon>().firstOrNull()!!
-       }
+        (signature as MethodSignature).method.getAnnotation<Nylon>(Nylon::class.java)
 
     private fun ProceedingJoinPoint.getEvaluationContext(): StandardEvaluationContext =
         StandardEvaluationContext().also {ctx ->
@@ -30,9 +36,13 @@ class JoinPointUtil {
             (it.getValue(context) as List<*>).joinToString(",","[", "]")
         }
 
-    fun extract(joinPoint: ProceedingJoinPoint) : Pair<Nylon, String> =
-        joinPoint.getNylon().let {
-            Pair(it, getCacheKey(joinPoint.getEvaluationContext(), it.key))
+    fun extract(joinPoint: ProceedingJoinPoint) : NylonJoinPointExtract =
+        try {
+            joinPoint.getNylon().let{
+                NylonJoinPointExtract.ValidExtract(it, getCacheKey(joinPoint.getEvaluationContext(), it.key))
+            }
+        } catch (cause: RuntimeException) {
+            NylonJoinPointExtract.InValidExtract(cause)
         }
 
 
