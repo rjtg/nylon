@@ -31,7 +31,7 @@ allprojects {
     val versionDetails: groovy.lang.Closure<VersionDetails> by rootProject.extra
     val versionDetailsObj: VersionDetails by rootProject.extra { versionDetails.call() }
     val distTag = if (versionDetailsObj.commitDistance > 0) "-d" + versionDetailsObj.commitDistance + "-" + versionDetailsObj.gitHash.substring(0, 4) else ""
-    val branchTag = if (versionDetailsObj.branchName ?: "master" == "master") "" + versionDetailsObj.commitDistance else "-" + versionDetailsObj.branchName!!.substring(0, 3)
+    val branchTag = if (versionDetailsObj.branchName ?: "master" == "master") "" else "-" + versionDetailsObj.branchName!!.substring(0, 3)
     version = (versionDetailsObj.lastTag ?: "0.0.1") + distTag + branchTag
     apply(plugin = "maven-publish")
     apply(plugin= "com.jfrog.bintray")
