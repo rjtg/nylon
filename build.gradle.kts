@@ -57,11 +57,18 @@ allprojects {
 
 
     publishing {
+        repositories {
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/rjtg/nylon")
+                credentials {
+                    username = project.findProperty("gpr.user") as String? ?: System.getenv("USERNAME")
+                    password = project.findProperty("gpr.key") as String? ?: System.getenv("TOKEN")
+                }
+            }
+        }
         publications {
-            create<MavenPublication>("nylon") {
-                groupId = project.group as String
-                artifactId = project.name
-                version = project.version as String
+            register("gpr", MavenPublication::class) {
                 from(components["java"])
                 pom {
                     name.set("Nylon")
