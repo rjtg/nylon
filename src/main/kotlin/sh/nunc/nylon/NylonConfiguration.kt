@@ -10,7 +10,5 @@ class NylonConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    fun getSystemUtcClock(){
-        Clock.systemUTC()
-    }
+    fun getSystemUtcClock(): Clock = Clock.systemUTC()
 }
