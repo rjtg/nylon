@@ -14,8 +14,10 @@ cache:
     - "$HOME/.gradle/caches/"
     - "$HOME/.gradle/wrapper/"
 deploy:
-  provider: script
-  script: ./gradlew bintrayUpload -PbintrayUser=$BINTRAY_USER -PbintrayApiKey=$BINTRAY_KEY
-  on:
-    branch: master
-    tags: true
+  provider: releases
+    api_key: "GITHUB OAUTH TOKEN"
+    file: "FILE TO UPLOAD"
+    skip_cleanup: true
+    on:
+      tags: true
+      branch: master
