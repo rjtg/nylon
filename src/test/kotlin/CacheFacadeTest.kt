@@ -134,7 +134,7 @@ class CacheFacadeTest {
 
     }
 
-    @DisplayName("test whether update in background fills underlying cahces correct")
+    @DisplayName("test whether update in background fills underlying caches correct")
     @Test
     fun testInsertBackground(){
         val joinPoint = mockk<ProceedingJoinPoint>()

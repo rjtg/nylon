@@ -16,24 +16,13 @@ plugins {
 
 }
 
-allprojects {
-    apply(plugin = "com.palantir.git-version")
-    group = "sh.nunc"
-    val gitVersion: groovy.lang.Closure<*> by rootProject.extra
-    val versionDetails: groovy.lang.Closure<VersionDetails> by rootProject.extra
-    val versionDetailsObj: VersionDetails by rootProject.extra { versionDetails.call() }
-    val distTag = if (versionDetailsObj.commitDistance > 0) "-d" + versionDetailsObj.commitDistance + "-" + versionDetailsObj.gitHash.substring(0, 4) else ""
-    val branchTag = if (versionDetailsObj.branchName ?: "master" == "master") "" else "-" + versionDetailsObj.branchName!!.substring(0, 3)
-    version = (versionDetailsObj.lastTag ?: "0.0.1") + distTag + branchTag
-
-    fun findProperty(s: String) = project.findProperty(s) as String?
-
-}
-
-
-tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "1.8"
-}
+group = "sh.nunc"
+val gitVersion: groovy.lang.Closure<*> by rootProject.extra
+val versionDetails: groovy.lang.Closure<VersionDetails> by rootProject.extra
+val versionDetailsObj: VersionDetails by rootProject.extra { versionDetails.call() }
+val distTag = if (versionDetailsObj.commitDistance > 0) "-d" + versionDetailsObj.commitDistance + "-" + versionDetailsObj.gitHash.substring(0, 4) else ""
+val branchTag = if (versionDetailsObj.branchName ?: "master" == "master") "" else "-" + versionDetailsObj.branchName!!.substring(0, 3)
+version = (versionDetailsObj.lastTag ?: "0.0.1") + distTag + branchTag
 
 repositories {
     mavenCentral()
@@ -63,4 +52,6 @@ dependencies {
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
 }
-
+tasks.test {
+    useJUnitPlatform()
+}

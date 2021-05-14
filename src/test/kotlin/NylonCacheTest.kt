@@ -32,7 +32,7 @@ class NylonCacheTest {
     @InjectMockKs lateinit var nylonAspect: NylonAspectRedis
 
     @Test
-    @DisplayName("if checker decides to do backgroundrefresh cashfacade does backgroundrefresh")
+    @DisplayName("if checker decides to do backgroundrefresh cachefacade does backgroundrefresh")
     fun testBackgroundRefresh(){
         every { cacheFacade.getFromCache(cacheName, key) } returns nylonValue
         every { nylonCacheChecker.check(annotation, nylonValue) } returns NylonState.RefreshInBackground(nylonValue.value)
