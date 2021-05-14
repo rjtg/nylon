@@ -10,7 +10,7 @@ plugins {
     val kotlinVersion: String by System.getProperties()
     kotlin("jvm") version kotlinVersion
     id("idea")
-    id("com.palantir.git-version") version "0.11.0" apply true
+    id("com.palantir.git-version") version "0.12.3" apply true
     id("org.jetbrains.kotlin.plugin.spring") version kotlinVersion
     id("org.jetbrains.kotlin.plugin.allopen") version kotlinVersion
     id("maven-publish")
