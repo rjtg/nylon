@@ -56,3 +56,19 @@ tasks.withType<KotlinCompile> {
 tasks.test {
     useJUnitPlatform()
 }
+
+
+
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "sh.nunc"
+            artifactId = "nylon"
+            version = "${project.version}"
+
+            from(components["java"])
+        }
+    }
+}
+
