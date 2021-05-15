@@ -35,19 +35,18 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion")
     implementation("org.springframework.boot:spring-boot-starter-aop:$springBootVersion")
     implementation("org.springframework.boot:spring-boot-starter-cache:$springBootVersion")
-    //implementation("org.springframework.data:spring-data-redis:$springBootVersion")
-    implementation("io.github.microutils:kotlin-logging:1.12.5")
-    implementation("org.aspectj:aspectjweaver:1.9.4")
-    implementation("net.jodah:failsafe:2.3.1")
+    implementation("io.github.microutils:kotlin-logging-jvm:2.0.6")
+    implementation("org.aspectj:aspectjweaver:1.9.6")
+    implementation("net.jodah:failsafe:2.4.0")
     testImplementation("io.mockk:mockk:1.11.0")
     testImplementation("com.ninja-squad:springmockk:3.0.1")
     testImplementation("org.springframework.boot:spring-boot-starter-test:$springBootVersion") {
         exclude(module = "mockito-core")
     }
-    testImplementation("org.assertj:assertj-core:3.11.1")
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.2.0")
-    testImplementation("org.junit.jupiter:junit-jupiter-params:5.2.0")
-    testRuntime("org.junit.jupiter:junit-jupiter-engine:5.2.0")
+    testImplementation("org.assertj:assertj-core:3.19.0")
+    testImplementation("org.junit.jupiter:junit-jupiter-api")
+    testImplementation("org.junit.jupiter:junit-jupiter-params")
+    testRuntime("org.junit.jupiter:junit-jupiter-engine")
 }
 
 tasks.withType<KotlinCompile> {
