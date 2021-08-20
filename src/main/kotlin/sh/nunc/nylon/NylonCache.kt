@@ -31,7 +31,7 @@ sealed class NylonCacheValue{
 @Aspect
 class NylonAspectRedis(@Autowired private val joinPointUtil: JoinPointUtil, @Autowired private val cacheFacade: CacheFacade, @Autowired private val nylonCacheChecker: NylonCacheChecker) {
 
-    @Pointcut("@annotation(sh.nunc.nylon.Nylon)")
+    @Pointcut("@annotation(sh.nunc.nylon.Nylon) || @within(sh.nunc.nylon.Nylon)")
     fun nylonPointcut() {
         //just a pointcut
     }

@@ -1,5 +1,6 @@
 package sh.nunc.nylon
 
+import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.reflect.CodeSignature
 import org.aspectj.lang.reflect.MethodSignature
@@ -8,6 +9,7 @@ import org.springframework.expression.spel.support.StandardEvaluationContext
 import org.springframework.stereotype.Component
 import java.lang.RuntimeException
 
+private val logger = KotlinLogging.logger {}
 
 
 sealed class NylonJoinPointExtract {
@@ -38,6 +40,7 @@ class JoinPointUtil {
 
     fun extract(joinPoint: ProceedingJoinPoint) : NylonJoinPointExtract =
         try {
+            logger.debug { "extracting from ${joinPoint.signature.name}" }
             joinPoint.getNylon().let{
                 NylonJoinPointExtract.ValidExtract(it, getCacheKey(joinPoint.getEvaluationContext(), it.key))
             }
