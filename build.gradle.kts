@@ -57,11 +57,11 @@ tasks {
     test {
         useJUnitPlatform()
     }
-    getByName<GenerateMavenPom>("generatePomFileForMavenPublish"){
+    getByName<GenerateMavenPom>("generatePomFileForMavenPublication"){
         this.destination = file("pom.xml")
     }
     getByName("jar") {
-        dependsOn("generatePomFileForMavenPublish")
+        dependsOn("generatePomFileForMavenPublication")
     }
 }
 
