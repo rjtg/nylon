@@ -49,11 +49,20 @@ dependencies {
     testRuntime("org.junit.jupiter:junit-jupiter-engine")
 }
 
-tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "1.8"
-}
-tasks.test {
-    useJUnitPlatform()
+tasks {
+
+    withType<KotlinCompile> {
+        kotlinOptions.jvmTarget = "1.8"
+    }
+    test {
+        useJUnitPlatform()
+    }
+    getByName<GenerateMavenPom>("generatePomFileForMavenPublish"){
+        this.destination = file("pom.xml")
+    }
+    getByName("jar") {
+        dependsOn("generatePomFileForMavenPublish")
+    }
 }
 
 
