@@ -98,3 +98,4 @@ fabric.properties
 
 .gradle
 build/
+/pom.xml
