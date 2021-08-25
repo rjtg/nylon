@@ -114,7 +114,9 @@ class CacheFacadeTest {
     fun testInsertNow(){
         val joinPoint = mockk<ProceedingJoinPoint>()
         val newValue = "new"
-
+        val methodSignature = mockk<MethodSignature>()
+        every { joinPoint.signature} returns methodSignature
+        every {methodSignature.returnType} returns String.javaClass
         every { clock.millis() } returns System.currentTimeMillis()
         every { joinPoint.proceed() } returns newValue
         justRun {
@@ -128,6 +130,8 @@ class CacheFacadeTest {
         }
 
         verifyAll {
+            joinPoint.signature
+            methodSignature.returnType
             joinPoint.proceed()
             valueCache.put(cacheKey, newValue)
             timeCache.put(cacheKey, any())
