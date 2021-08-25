@@ -2,6 +2,7 @@ import io.mockk.*
 import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import org.aspectj.lang.ProceedingJoinPoint
+import org.aspectj.lang.reflect.MethodSignature
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -130,6 +131,30 @@ class CacheFacadeTest {
             joinPoint.proceed()
             valueCache.put(cacheKey, newValue)
             timeCache.put(cacheKey, any())
+        }
+
+    }
+
+    @Test
+    fun testInsertNowFallback(){
+        val joinPoint = mockk<ProceedingJoinPoint>()
+        val methodSignature = mockk<MethodSignature>()
+        every { joinPoint.proceed() } answers {
+            Thread.sleep(nylon.timeoutMillis+5)
+            null
+        }
+        every { joinPoint.signature} returns methodSignature
+        every {methodSignature.returnType} returns String.javaClass
+
+        every { clock.millis() } returns System.currentTimeMillis()
+        cacheFacade.insertNow(joinPoint, nylon, cacheKey).let {
+            Assertions.assertEquals(null, it)
+        }
+
+        verifyAll {
+            joinPoint.signature
+            methodSignature.returnType
+            joinPoint.proceed()
         }
 
     }

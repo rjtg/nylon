@@ -5,6 +5,7 @@ import net.jodah.failsafe.Failsafe
 import net.jodah.failsafe.Fallback
 import net.jodah.failsafe.Timeout
 import org.aspectj.lang.ProceedingJoinPoint
+import org.aspectj.lang.reflect.MethodSignature
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.cache.CacheManager
 import org.springframework.stereotype.Component
@@ -60,6 +61,10 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
         }
     }
 
+    private fun  <T> fallbackValue(type: Class<T>):T?{
+        return null
+    }
+
     fun insertNow(
         joinPoint: ProceedingJoinPoint,
         nylon: Nylon,
@@ -69,8 +74,9 @@ class CacheFacade(@Autowired private val cacheManager: CacheManager, @Autowired 
             Timeout.of(
                 Duration.ofMillis(nylon.timeoutMillis)
             )
+        val returnType = (joinPoint.signature as MethodSignature).returnType
         val fallback: Fallback<Any?> =
-            Fallback.of { null }
+            Fallback.of(fallbackValue(returnType))
         logger.debug { "fetching value downstream. Timeout: ${nylon.timeoutMillis} ms." }
         return Failsafe.with(fallback, timeout)
             .onFailure { e -> logger.warn { "failed to fetch downstream element. ${e.failure}" } }
